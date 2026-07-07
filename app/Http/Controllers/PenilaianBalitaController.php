@@ -262,7 +262,7 @@ class PenilaianBalitaController extends Controller
     // =========================
     // DESTROY
     // =========================
-    public function destroy(int $balita_id) //menghapus semua penilaian balita tertentu
+    public function destroy(Request $request, int $balita_id) //menghapus penilaian balita di bulan tersebut
     {
         $user = Auth::user();
 
@@ -271,10 +271,21 @@ class PenilaianBalitaController extends Controller
             ->where('posyandu_id', $user->posyandu_id)
             ->firstOrFail();
 
-        // Hapus semua penilaian milik balita tersebut
-        PenilaianBalita::where('balita_id', $balita->id)->delete();
+        $bulan = $request->input('bulan');
+        $tahun = $request->input('tahun');
 
-        return redirect()->route('penilaian_balita.index')
+        if ($bulan && $tahun) {
+            // Hapus penilaian hanya pada bulan dan tahun tersebut
+            PenilaianBalita::where('balita_id', $balita->id)
+                ->whereMonth('tanggal_penilaian', $bulan)
+                ->whereYear('tanggal_penilaian', $tahun)
+                ->delete();
+        } else {
+            // Fallback: hapus semua jika tidak ada filter
+            PenilaianBalita::where('balita_id', $balita->id)->delete();
+        }
+
+        return redirect()->route('penilaian_balita.index', ['bulan' => $bulan, 'tahun' => $tahun])
             ->with('success', 'Penilaian ' . $balita->nama . ' berhasil dihapus.');
     }
 }

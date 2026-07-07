@@ -68,7 +68,7 @@ class BalitaController extends Controller
             'jenis_kelamin' => $request->jenis_kelamin,
             'tanggal_lahir' => $request->tanggal_lahir,
             'nama_ortu' => $request->nama_ortu,
-            'posyandu_id' => $user->posyandu_id, // 
+            'posyandu_id' => $user->posyandu_id, 
         ]);
 
         return redirect()->route('balita.index')->with('success', 'Data balita berhasil ditambahkan');

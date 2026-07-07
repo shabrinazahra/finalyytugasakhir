@@ -87,7 +87,7 @@
                     <tr class="hover:bg-gray-50 transition">
 
                         <td class="px-4 py-3 text-gray-700">{{ $loop->iteration }}</td>
-                        
+
                         {{-- Tanggal Penilaian --}}
                         <td class="px-4 py-3 text-gray-600 whitespace-nowrap">
                             {{ $tanggalPenilaian
@@ -183,6 +183,8 @@
                                                     class="flex-1">
                                                     @csrf
                                                     @method('DELETE')
+                                                    <input type="hidden" name="bulan" value="{{ $bulan }}">
+                                                    <input type="hidden" name="tahun" value="{{ $tahun }}">
                                                     <button
                                                         type="submit"
                                                         class="w-full py-3 rounded-xl bg-[#1B3C53] text-white hover:bg-[#234C6A] transition">

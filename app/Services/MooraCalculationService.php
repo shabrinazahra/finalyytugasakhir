@@ -63,7 +63,6 @@ class MooraCalculationService
 
         // Cari kriteria yang benar-benar dievaluasi di periode/grup ini
         $assessedKriteriaIds = $rawPenilaians->pluck('kriteria_id')->unique()->toArray();
-        $totalKriteriaInPeriod = count($assessedKriteriaIds);
 
         // Ambil kriteria yang relevan (termasuk yang mungkin sudah di-soft-delete)
         $kriterias = Kriteria::withTrashed()->whereIn('id', $assessedKriteriaIds)->orderBy('id')->get();
@@ -75,6 +74,9 @@ class MooraCalculationService
         $kriterias = $kriterias->filter(function ($k) {
             return is_null($k->deleted_at);
         })->values();
+
+        $activeKriteriaIds = $kriterias->pluck('id')->toArray();
+        $requiredKriteriaCount = count($activeKriteriaIds);
 
         // Group berdasarkan balita_id saja (per balita per periode)
         // Gunakan separator yang aman: "::" untuk menghindari konflik underscore pada tanggal/id
@@ -88,8 +90,9 @@ class MooraCalculationService
         $bobotMatrix    = []; // [group_key][kriteria_id] = bobot snapshot
 
         foreach ($grouped as $key => $items) {
-            // Skip jika penilaian belum lengkap
-            if ($items->count() < $totalKriteriaInPeriod) {
+            // Skip jika penilaian belum lengkap untuk kriteria yang aktif
+            $evaluatedActiveIds = $items->pluck('kriteria_id')->intersect($activeKriteriaIds)->unique();
+            if ($evaluatedActiveIds->count() < $requiredKriteriaCount) {
                 continue;
             }
 
@@ -128,7 +131,7 @@ class MooraCalculationService
                 'decisionMatrix'     => [],
                 'normalizedMatrix'   => [],
                 'weightedMatrix'     => [],
-                'bobotMatrix'        => [],   
+                'bobotMatrix'        => [],
                 'results'            => [],
                 'isComplete'         => $isComplete,
                 'incompleteBalitas'  => $incompleteBalitas,
@@ -312,7 +315,7 @@ class MooraCalculationService
             // Hitung target kuota ideal dengan pembulatan standar (round)
             $highCount   = (int) round($total * 0.20);
             $mediumCount = (int) round($total * 0.30);
-            
+
             // Pengamanan agar kuota tidak melebihi jumlah total data
             if ($highCount + $mediumCount > $total) {
                 $highCount = (int) floor($total * 0.20);
