@@ -49,14 +49,43 @@ class LaporanController extends Controller
             }
         }
 
-        // Jalankan perhitungan MOORA berdasarkan periode dan posyandu yang dipilih
         $service = new \App\Services\MooraCalculationService();
-        $mooraData = $service->calculateMoora($request->periode, $request->posyandu_id);
 
-        // Ambil hasil perhitungan untuk ditampilkan di view
-        $results = $mooraData['results'];
-        $isComplete = $mooraData['isComplete'];
-        $incompleteBalitas = $mooraData['incompleteBalitas'];
+        // Tentukan daftar posyandu yang akan dihitung
+        $posyanduIds = $request->filled('posyandu_id')
+            ? [$request->posyandu_id]
+            : $posyandus->pluck('id')->toArray();
+
+        // Tentukan daftar periode yang akan dihitung
+        $periodeKeys = $request->filled('periode')
+            ? [$request->periode]
+            : array_keys($periodes);
+
+        $results = [];
+        $isComplete = true;
+        $incompleteBalitas = [];
+
+        // Hitung MOORA untuk setiap kombinasi (posyandu, periode)
+        foreach ($posyanduIds as $posId) {
+            foreach ($periodeKeys as $periodeKey) {
+                $mooraData = $service->calculateMoora($periodeKey, $posId);
+
+                $results = array_merge($results, $mooraData['results']);
+
+                if (!$mooraData['isComplete']) {
+                    $isComplete = false;
+                }
+                $incompleteBalitas = array_merge($incompleteBalitas, $mooraData['incompleteBalitas']);
+            }
+        }
+
+        // Urutkan ulang hasil gabungan berdasarkan skor tertinggi
+        usort($results, function ($a, $b) {
+            if (abs($b['nilai_akhir'] - $a['nilai_akhir']) > 0.000001) {
+                return $b['nilai_akhir'] <=> $a['nilai_akhir'];
+            }
+            return strcmp($a['balita']->nama, $b['balita']->nama);
+        });
 
         // Cek apakah ada kriteria yang belum memiliki bobot
         $hasAnyNullBobot = $kriterias->whereNull('bobot')->isNotEmpty();
