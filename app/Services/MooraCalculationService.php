@@ -336,7 +336,7 @@ class MooraCalculationService
                 $thresholdSedang = $items[$highCount + $mediumCount - 1]['res']['nilai_akhir'];
             }
 
-            // Klasifikasikan masing-masing balita
+            // Kelompokan masing-masing balita
             foreach ($items as $i => $item) {
                 $originalIndex = $item['original_index'];
                 $yi = $item['res']['nilai_akhir'];
