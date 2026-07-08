@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\Balita;
 use App\Models\PenilaianBalita;
 use App\Models\Posyandu;
 use App\Models\Kriteria;
@@ -13,11 +14,46 @@ class LaporanController extends Controller
     private function getIndonesianMonth($monthNum) // mengubah angka menjadi nama bulan 
     {
         $months = [
-            1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
-            5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
-            9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
+            1 => 'Januari',
+            2 => 'Februari',
+            3 => 'Maret',
+            4 => 'April',
+            5 => 'Mei',
+            6 => 'Juni',
+            7 => 'Juli',
+            8 => 'Agustus',
+            9 => 'September',
+            10 => 'Oktober',
+            11 => 'November',
+            12 => 'Desember'
         ];
         return $months[intval($monthNum)] ?? '';
+    }
+
+    private function getSelectedPeriode(Request $request, $posyanduId = null) // mengambil periode aktif (default ke bulan terbaru)
+    {
+        // Jika user sudah memilih periode dari form, gunakan itu
+        if ($request->filled('periode')) {
+            return $request->periode;
+        }
+
+        // Cari tanggal penilaian terbaru, difilter per posyandu jika ada
+        $query = PenilaianBalita::whereNotNull('tanggal_penilaian');
+
+        if ($posyanduId) {
+            $balitaIds = Balita::where('posyandu_id', $posyanduId)->pluck('id');
+            $query->whereIn('balita_id', $balitaIds);
+        }
+
+        $latestDate = $query->max('tanggal_penilaian');
+
+        // Jika ada data, gunakan bulan & tahun dari tanggal terbaru sebagai default
+        if ($latestDate) {
+            return Carbon::parse($latestDate)->format('Y-m');
+        }
+
+        // Fallback ke bulan saat ini jika belum ada data sama sekali
+        return now()->format('Y-m');
     }
 
     public function index(Request $request) // menampilkan halaman laporan sesuai filter 
@@ -44,48 +80,25 @@ class LaporanController extends Controller
             for ($month = 12; $month >= 1; $month--) {
                 $carbon = Carbon::createFromDate($year, $month, 1);
                 $key = $carbon->format('Y-m');
-                $label = $this->getIndonesianMonth($month);
+                $label = $this->getIndonesianMonth($month) . ' ' . $year;
                 $periodes[$key] = $label;
             }
         }
 
-        $service = new \App\Services\MooraCalculationService();
+        // Tentukan posyandu dan periode yang aktif
+        // Periode selalu ada nilainya (default ke bulan terbaru) agar tidak terjadi
+        // penggabungan data lintas bulan yang menyebabkan nilai berubah-ubah
+        $selectedPosyandu = $request->posyandu_id;
+        $selectedPeriode  = $this->getSelectedPeriode($request, $selectedPosyandu);
 
-        // Tentukan daftar posyandu yang akan dihitung
-        $posyanduIds = $request->filled('posyandu_id')
-            ? [$request->posyandu_id]
-            : $posyandus->pluck('id')->toArray();
+        // Jalankan perhitungan MOORA berdasarkan periode dan posyandu yang dipilih
+        $service   = new \App\Services\MooraCalculationService();
+        $mooraData = $service->calculateMoora($selectedPeriode, $selectedPosyandu ?: null);
 
-        // Tentukan daftar periode yang akan dihitung
-        $periodeKeys = $request->filled('periode')
-            ? [$request->periode]
-            : array_keys($periodes);
-
-        $results = [];
-        $isComplete = true;
-        $incompleteBalitas = [];
-
-        // Hitung MOORA untuk setiap kombinasi (posyandu, periode)
-        foreach ($posyanduIds as $posId) {
-            foreach ($periodeKeys as $periodeKey) {
-                $mooraData = $service->calculateMoora($periodeKey, $posId);
-
-                $results = array_merge($results, $mooraData['results']);
-
-                if (!$mooraData['isComplete']) {
-                    $isComplete = false;
-                }
-                $incompleteBalitas = array_merge($incompleteBalitas, $mooraData['incompleteBalitas']);
-            }
-        }
-
-        // Urutkan ulang hasil gabungan berdasarkan skor tertinggi
-        usort($results, function ($a, $b) {
-            if (abs($b['nilai_akhir'] - $a['nilai_akhir']) > 0.000001) {
-                return $b['nilai_akhir'] <=> $a['nilai_akhir'];
-            }
-            return strcmp($a['balita']->nama, $b['balita']->nama);
-        });
+        // Ambil hasil perhitungan untuk ditampilkan di view
+        $results           = $mooraData['results'];
+        $isComplete        = $mooraData['isComplete'];
+        $incompleteBalitas = $mooraData['incompleteBalitas'];
 
         // Cek apakah ada kriteria yang belum memiliki bobot
         $hasAnyNullBobot = $kriterias->whereNull('bobot')->isNotEmpty();
@@ -97,7 +110,9 @@ class LaporanController extends Controller
             'results',
             'hasAnyNullBobot',
             'isComplete',
-            'incompleteBalitas'
+            'incompleteBalitas',
+            'selectedPeriode',
+            'selectedPosyandu'
         ));
     }
 }

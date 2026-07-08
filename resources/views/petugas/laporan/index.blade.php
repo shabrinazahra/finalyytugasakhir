@@ -12,11 +12,11 @@
             </div>
 
             @if (!empty($results))
-                <button onclick="window.print()"
-                    class="bg-[#1B3C53] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#244E6B] transition shadow-sm flex items-center gap-2">
-                    <x-lucide-printer class="w-4 h-4" />
-                    Cetak Laporan
-                </button>
+            <button onclick="window.print()"
+                class="bg-[#1B3C53] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#244E6B] transition shadow-sm flex items-center gap-2">
+                <x-lucide-printer class="w-4 h-4" />
+                Cetak Laporan
+            </button>
             @endif
         </div>
 
@@ -31,20 +31,20 @@
 
         {{-- WARNING UNTUK BOBOT AHP YANG BELUM DIHITUNG --}}
         @if ($hasAnyNullBobot)
-            <div
-                class="mb-6 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl flex items-start gap-3 shadow-sm no-print">
-                <x-lucide-alert-triangle class="w-5 h-5 mt-0.5 shrink-0 text-amber-500" />
-                <div>
-                    <p class="font-semibold text-amber-800">Perhatian: Perhitungan AHP Belum Disimpan</p>
-                    <p class="text-xs text-amber-600 mt-1 leading-relaxed">
-                        Sebagian kriteria belum memiliki nilai bobot hasil perhitungan AHP. Nilai akhir SPK saat ini
-                        menggunakan bobot default (0). Harap masuk ke menu <a
-                            href="{{ route('petugas.perhitunganAHP.index') }}"
-                            class="underline font-semibold hover:text-amber-800">Perhitungan AHP</a> untuk melakukan dan
-                        menyimpan bobot perbandingan kriteria terlebih dahulu.
-                    </p>
-                </div>
+        <div
+            class="mb-6 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl flex items-start gap-3 shadow-sm no-print">
+            <x-lucide-alert-triangle class="w-5 h-5 mt-0.5 shrink-0 text-amber-500" />
+            <div>
+                <p class="font-semibold text-amber-800">Perhatian: Perhitungan AHP Belum Disimpan</p>
+                <p class="text-xs text-amber-600 mt-1 leading-relaxed">
+                    Sebagian kriteria belum memiliki nilai bobot hasil perhitungan AHP. Nilai akhir SPK saat ini
+                    menggunakan bobot default (0). Harap masuk ke menu <a
+                        href="{{ route('petugas.perhitunganAHP.index') }}"
+                        class="underline font-semibold hover:text-amber-800">Perhitungan AHP</a> untuk melakukan dan
+                    menyimpan bobot perbandingan kriteria terlebih dahulu.
+                </p>
             </div>
+        </div>
         @endif
 
         {{-- FILTER CARD (NO-PRINT) --}}
@@ -59,10 +59,10 @@
                         class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#1B3C53] focus:border-[#1B3C53] outline-none bg-gray-50 transition">
                         <option value="">-- Semua Posyandu --</option>
                         @foreach ($posyandus as $pos)
-                            <option value="{{ $pos->id }}"
-                                {{ request('posyandu_id') == $pos->id ? 'selected' : '' }}>
-                                {{ $pos->nama_posyandu }}
-                            </option>
+                        <option value="{{ $pos->id }}"
+                            {{ $selectedPosyandu == $pos->id ? 'selected' : '' }}>
+                            {{ $pos->nama_posyandu }}
+                        </option>
                         @endforeach
                     </select>
                 </div>
@@ -73,11 +73,10 @@
                         Penilaian</label>
                     <select name="periode"
                         class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#1B3C53] focus:border-[#1B3C53] outline-none bg-gray-50 transition">
-                        <option value="">-- Semua Periode --</option>
                         @foreach ($periodes as $key => $label)
-                            <option value="{{ $key }}" {{ request('periode') == $key ? 'selected' : '' }}>
-                                {{ $label }}
-                            </option>
+                        <option value="{{ $key }}" {{ $selectedPeriode == $key ? 'selected' : '' }}>
+                            {{ $label }}
+                        </option>
                         @endforeach
                     </select>
                 </div>
@@ -90,120 +89,141 @@
                         Terapkan Filter
                     </button>
                     @if (request()->filled('posyandu_id') || request()->filled('periode'))
-                        <a href="{{ route('petugas.laporan.index') }}"
-                            class="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2.5 rounded-xl text-sm font-semibold transition flex items-center justify-center"
-                            title="Reset Filter">
-                            <x-lucide-rotate-ccw class="w-4 h-4" />
-                        </a>
+                    <a href="{{ route('petugas.laporan.index') }}"
+                        class="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2.5 rounded-xl text-sm font-semibold transition flex items-center justify-center"
+                        title="Reset Filter">
+                        <x-lucide-rotate-ccw class="w-4 h-4" />
+                    </a>
                     @endif
                 </div>
 
             </form>
         </div>
 
+        {{-- BADGE INFO PERIODE & POSYANDU AKTIF --}}
+        <div class="flex flex-wrap gap-2 mb-4 items-center no-print">
+            <span class="text-xs text-gray-500 font-medium">Menampilkan data:</span>
+            <span class="inline-flex items-center gap-1.5 bg-[#1B3C53]/10 text-[#1B3C53] text-xs font-semibold px-3 py-1 rounded-full">
+                <x-lucide-calendar class="w-3 h-3" />
+                {{ $periodes[$selectedPeriode] ?? $selectedPeriode }}
+            </span>
+            @if ($selectedPosyandu)
+            <span class="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-600 text-xs font-semibold px-3 py-1 rounded-full">
+                <x-lucide-map-pin class="w-3 h-3" />
+                {{ $posyandus->firstWhere('id', $selectedPosyandu)->nama_posyandu ?? '-' }}
+            </span>
+            @else
+            <span class="inline-flex items-center gap-1.5 bg-gray-100 text-gray-500 text-xs font-semibold px-3 py-1 rounded-full">
+                <x-lucide-map-pin class="w-3 h-3" />
+                Semua Posyandu
+            </span>
+            @endif
+        </div>
+
         @if (empty($results))
-            <div
-                class="bg-white rounded-2xl border shadow-sm p-12 text-center text-gray-400 font-medium animate-fade-in">
-                <div class="flex flex-col items-center justify-center gap-2">
-                    <x-lucide-file-text class="w-12 h-12 text-gray-300" />
-                    <span class="font-bold text-lg text-gray-500">Data tidak ada</span>
-                    <span class="text-xs text-gray-400">Belum ada hasil penilaian balita pada periode ini. Pastikan data
-                        penilaian kriteria balita diinputkan secara lengkap terlebih dahulu.</span>
-                </div>
+        <div
+            class="bg-white rounded-2xl border shadow-sm p-12 text-center text-gray-400 font-medium animate-fade-in">
+            <div class="flex flex-col items-center justify-center gap-2">
+                <x-lucide-file-text class="w-12 h-12 text-gray-300" />
+                <span class="font-bold text-lg text-gray-500">Data tidak ada</span>
+                <span class="text-xs text-gray-400">Belum ada hasil penilaian balita pada periode ini. Pastikan data
+                    penilaian kriteria balita diinputkan secara lengkap terlebih dahulu.</span>
             </div>
+        </div>
         @else
-            {{-- RINGKASAN STATUS FILTER (UNTUK PRINT) --}}
-            <div class="hidden print:block mb-4 text-sm text-gray-700">
-                <p><strong>Posyandu:</strong>
-                    {{ request('posyandu_id') ? $posyandus->firstWhere('id', request('posyandu_id'))->nama_posyandu ?? 'Semua' : 'Semua Posyandu' }}
-                </p>
-                <p><strong>Periode Penilaian:</strong>
-                    {{ request('periode') ? $periodes[request('periode')] ?? 'Semua' : 'Semua Periode' }}</p>
+        {{-- RINGKASAN STATUS FILTER (UNTUK PRINT) --}}
+        <div class="hidden print:block mb-4 text-sm text-gray-700">
+            <p><strong>Posyandu:</strong>
+                {{ $selectedPosyandu ? ($posyandus->firstWhere('id', $selectedPosyandu)->nama_posyandu ?? 'Semua') : 'Semua Posyandu' }}
+            </p>
+            <p><strong>Periode Penilaian:</strong>
+                {{ $periodes[$selectedPeriode] ?? $selectedPeriode }}
+            </p>
+        </div>
+
+        {{-- REPORT TABLE --}}
+        <div class="bg-white rounded-2xl shadow-sm border overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+
+                    {{-- HEADER --}}
+                    <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide border-b">
+                        <tr>
+                            <th class="px-4 py-3.5 text-center w-12">Rank</th>
+                            <th class="px-4 py-3.5 text-left">Nama Balita</th>
+                            <th class="px-4 py-3.5 text-left">Posyandu</th>
+                            <th class="px-4 py-3.5 text-center">Tanggal Penilaian</th>
+                            <th class="px-4 py-3.5 text-center">Skor</th>
+                            <th class="px-4 py-3.5 text-center">Status Prioritas</th>
+                        </tr>
+                    </thead>
+
+                    {{-- BODY --}}
+                    <tbody class="divide-y text-gray-700">
+                        @forelse ($results as $index => $row)
+                        <tr class="hover:bg-gray-50/50 transition">
+
+                            {{-- RANK --}}
+                            <td class="px-4 py-3 text-center font-bold text-gray-900">
+                                {{ $index + 1 }}
+                            </td>
+
+                            {{-- NAMA BALITA --}}
+                            <td class="px-4 py-3 font-semibold text-gray-800">
+                                {{ $row['balita']->nama }}
+                            </td>
+
+                            {{-- POSYANDU --}}
+                            <td class="px-4 py-3 text-gray-500">
+                                {{ $row['balita']->posyandu->nama_posyandu ?? '-' }}
+                            </td>
+
+                            {{-- TANGGAL PENILAIAN --}}
+                            <td class="px-4 py-3 text-center text-gray-500">
+                                {{ \Carbon\Carbon::parse($row['tanggal'])->translatedFormat('d M Y') }}
+                            </td>
+
+                            {{-- SKOR SPK --}}
+                            <td class="px-4 py-3 text-center font-bold text-[#1B3C53]">
+                                {{ number_format($row['nilai_akhir'], 3) }}
+                            </td>
+
+                            {{-- STATUS PRIORITAS --}}
+                            <td class="px-4 py-3 text-center">
+                                @if ($row['color'] === 'red')
+                                <span
+                                    class="px-3 py-1 text-xs rounded-full font-bold bg-red-50 text-red-600 border border-red-200">
+                                    {{ $row['status'] }}
+                                </span>
+                                @elseif ($row['color'] === 'yellow')
+                                <span
+                                    class="px-3 py-1 text-xs rounded-full font-bold bg-amber-50 text-amber-600 border border-amber-200">
+                                    {{ $row['status'] }}
+                                </span>
+                                @else
+                                <span
+                                    class="px-3 py-1 text-xs rounded-full font-bold bg-green-50 text-green-600 border border-green-200">
+                                    {{ $row['status'] }}
+                                </span>
+                                @endif
+                            </td>
+
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="6" class="text-center py-12 text-gray-400 font-medium">
+                                <div class="flex flex-col items-center justify-center gap-2">
+                                    <x-lucide-file-text class="w-8 h-8 text-gray-300" />
+                                    <span>Tidak ditemukan data penilaian balita yang cocok.</span>
+                                </div>
+                            </td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+
+                </table>
             </div>
-
-            {{-- REPORT TABLE --}}
-            <div class="bg-white rounded-2xl shadow-sm border overflow-hidden">
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-
-                        {{-- HEADER --}}
-                        <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide border-b">
-                            <tr>
-                                <th class="px-4 py-3.5 text-center w-12">Rank</th>
-                                <th class="px-4 py-3.5 text-left">Nama Balita</th>
-                                <th class="px-4 py-3.5 text-left">Posyandu</th>
-                                <th class="px-4 py-3.5 text-center">Tanggal Penilaian</th>
-                                <th class="px-4 py-3.5 text-center">Skor</th>
-                                <th class="px-4 py-3.5 text-center">Status Prioritas</th>
-                            </tr>
-                        </thead>
-
-                        {{-- BODY --}}
-                        <tbody class="divide-y text-gray-700">
-                            @forelse ($results as $index => $row)
-                                <tr class="hover:bg-gray-50/50 transition">
-
-                                    {{-- RANK --}}
-                                    <td class="px-4 py-3 text-center font-bold text-gray-900">
-                                        {{ $index + 1 }}
-                                    </td>
-
-                                    {{-- NAMA BALITA --}}
-                                    <td class="px-4 py-3 font-semibold text-gray-800">
-                                        {{ $row['balita']->nama }}
-                                    </td>
-
-                                    {{-- POSYANDU --}}
-                                    <td class="px-4 py-3 text-gray-500">
-                                        {{ $row['balita']->posyandu->nama_posyandu ?? '-' }}
-                                    </td>
-
-                                    {{-- TANGGAL PENILAIAN --}}
-                                    <td class="px-4 py-3 text-center text-gray-500">
-                                        {{ \Carbon\Carbon::parse($row['tanggal'])->translatedFormat('d M Y') }}
-                                    </td>
-
-                                    {{-- SKOR SPK --}}
-                                    <td class="px-4 py-3 text-center font-bold text-[#1B3C53]">
-                                        {{ number_format($row['nilai_akhir'], 3) }}
-                                    </td>
-
-                                    {{-- STATUS PRIORITAS --}}
-                                    <td class="px-4 py-3 text-center">
-                                        @if ($row['color'] === 'red')
-                                            <span
-                                                class="px-3 py-1 text-xs rounded-full font-bold bg-red-50 text-red-600 border border-red-200">
-                                                {{ $row['status'] }}
-                                            </span>
-                                        @elseif ($row['color'] === 'yellow')
-                                            <span
-                                                class="px-3 py-1 text-xs rounded-full font-bold bg-amber-50 text-amber-600 border border-amber-200">
-                                                {{ $row['status'] }}
-                                            </span>
-                                        @else
-                                            <span
-                                                class="px-3 py-1 text-xs rounded-full font-bold bg-green-50 text-green-600 border border-green-200">
-                                                {{ $row['status'] }}
-                                            </span>
-                                        @endif
-                                    </td>
-
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="6" class="text-center py-12 text-gray-400 font-medium">
-                                        <div class="flex flex-col items-center justify-center gap-2">
-                                            <x-lucide-file-text class="w-8 h-8 text-gray-300" />
-                                            <span>Tidak ditemukan data penilaian balita yang cocok.</span>
-                                        </div>
-                                    </td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-
-                    </table>
-                </div>
-            </div>
+        </div>
         @endif
 
     </div>
