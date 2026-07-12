@@ -97,58 +97,53 @@ class PenilaianBalitaController extends Controller
         return view('kader.penilaian_balita.create', compact('kriterias'));
     }
 
-    private function normalizeHeader(string $value): string
+    // =========================
+    // INPUT MASSAL
+    // =========================
+    public function createMassal(Request $request)
     {
-        return preg_replace('/[^a-z0-9]+/', '', mb_strtolower(trim($value)));
-    }
-
-    private function findHeaderIndex(array $headers, array $candidates): ?int
-    {
-        $normalizedCandidates = array_map(fn($value) => $this->normalizeHeader($value), $candidates);
-
-        foreach ($headers as $index => $header) {
-            if (in_array($this->normalizeHeader($header), $normalizedCandidates, true)) {
-                return $index;
-            }
+        $user = Auth::user();
+        $tanggalInput = $request->input('tanggal');
+        
+        try {
+            $tanggal = $tanggalInput ? Carbon::parse($tanggalInput) : now();
+        } catch (\Exception $e) {
+            $tanggal = now();
         }
 
-        return null;
+        // Ambil ID balita yang sudah dinilai pada bulan & tahun dari tanggal terpilih
+        $sudahDinilai = PenilaianBalita::whereHas('balita', function ($q) use ($user) {
+            $q->where('posyandu_id', $user->posyandu_id);
+        })
+            ->whereMonth('tanggal_penilaian', $tanggal->month)
+            ->whereYear('tanggal_penilaian', $tanggal->year)
+            ->pluck('balita_id')
+            ->unique()
+            ->toArray();
+
+        // Ambil balita yang belum dinilai pada bulan & tahun dari tanggal terpilih
+        $balitas = Balita::where('posyandu_id', $user->posyandu_id)
+            ->whereNotIn('id', $sudahDinilai)
+            ->latest()
+            ->get();
+
+        // Ambil kriteria beserta kategori penilaian
+        $kriterias = Kriteria::with('kategoriPenilaians')
+            ->orderByRaw('CAST(SUBSTRING(kode_kriteria, 2) AS UNSIGNED)')
+            ->get();
+
+        return view('kader.penilaian_balita.create_massal', compact('balitas', 'kriterias', 'tanggal'));
     }
 
-    private function getCellValue(array $headers, array $row, array $candidates): string
-    {
-        $index = $this->findHeaderIndex($headers, $candidates);
-
-        if ($index === null) {
-            return '';
-        }
-
-        return trim((string) ($row[$index] ?? ''));
-    }
-
-    private function findBalitaByName(string $namaBalita, int $posyanduId): ?Balita
-    {
-        $normalizedTarget = $this->normalizeHeader($namaBalita);
-
-        $balitas = Balita::where('posyandu_id', $posyanduId)->get();
-
-        foreach ($balitas as $balita) {
-            if ($this->normalizeHeader($balita->nama) === $normalizedTarget) {
-                return $balita;
-            }
-        }
-
-        return null;
-    }
-
-    public function import(Request $request)
+    public function storeMassal(Request $request)
     {
         $request->validate([
-            'file' => 'required|file|mimes:xlsx,xls,csv',
+            'tanggal_penilaian' => 'required|date',
+            'penilaian' => 'required|array',
         ], [
-            'file.required' => 'File Excel wajib diunggah.',
-            'file.file' => 'File yang diunggah tidak valid.',
-            'file.mimes' => 'Format file harus Excel atau CSV.',
+            'tanggal_penilaian.required' => 'Tanggal penilaian wajib diisi.',
+            'tanggal_penilaian.date' => 'Format tanggal tidak valid.',
+            'penilaian.required' => 'Minimal satu balita harus dinilai.',
         ]);
 
         $user = Auth::user();
@@ -156,105 +151,77 @@ class PenilaianBalitaController extends Controller
             return back()->with('error', 'User belum memiliki posyandu');
         }
 
-        $file = $request->file('file');
-        $reader = IOFactory::createReaderForFile($file->getRealPath());
-        $spreadsheet = $reader->load($file->getRealPath());
-        $sheet = $spreadsheet->getActiveSheet();
-        $rows = $sheet->toArray();
-
-        if (count($rows) < 2) {
-            return back()->with('error', 'File Excel tidak memiliki data baris yang cukup.');
-        }
-
-        $headers = array_values(array_map(fn($value) => trim((string) $value), $rows[0]));
-
-        $namaIndex = $this->findHeaderIndex($headers, ['Nama Balita', 'Nama', 'Balita', 'Nama Anak']);
-        $tanggalIndex = $this->findHeaderIndex($headers, ['Tanggal Penilaian', 'Tanggal', 'Tgl Penilaian', 'Tgl']);
-
-        if ($namaIndex === null || $tanggalIndex === null) {
-            return back()->with('error', 'Format file tidak sesuai. Pastikan ada kolom Nama Balita dan Tanggal Penilaian.');
-        }
-
-        $kriterias = Kriteria::orderByRaw('CAST(SUBSTRING(kode_kriteria, 2) AS UNSIGNED)')->get();
+        $tanggalPenilaian = $request->input('tanggal_penilaian');
+        $tanggal = Carbon::parse($tanggalPenilaian);
         $imported = 0;
-        $firstImportedDate = null;
 
-        foreach (array_slice($rows, 1) as $row) {
-            $namaBalita = trim((string) ($row[$namaIndex] ?? ''));
-            $tanggalPenilaian = trim((string) ($row[$tanggalIndex] ?? ''));
+        // penilaian[balita_id][kriteria_id] = kategori_id
+        foreach ($request->input('penilaian', []) as $balitaId => $kriteriaValues) {
+            // Pastikan balita milik posyandu user
+            $balita = Balita::where('id', $balitaId)
+                ->where('posyandu_id', $user->posyandu_id)
+                ->first();
 
-            if ($namaBalita === '' || $tanggalPenilaian === '') {
-                continue;
-            }
-
-            $balita = $this->findBalitaByName($namaBalita, $user->posyandu_id);
             if (!$balita) {
                 continue;
             }
 
-            $tanggal = null;
-            try {
-                $tanggal = Carbon::createFromFormat('d/m/Y', $tanggalPenilaian);
-            } catch (\Exception $e) {
-                try {
-                    $tanggal = Carbon::createFromFormat('Y-m-d', $tanggalPenilaian);
-                } catch (\Exception $e2) {
-                    try {
-                        $tanggal = Carbon::createFromFormat('d-m-Y', $tanggalPenilaian);
-                    } catch (\Exception $e3) {
-                        $tanggal = Carbon::parse($tanggalPenilaian);
-                    }
-                }
-            }
-
-            $existing = PenilaianBalita::where('balita_id', $balita->id)
+            // Cek duplikasi
+            $sudahAda = PenilaianBalita::where('balita_id', $balitaId)
                 ->whereMonth('tanggal_penilaian', $tanggal->month)
                 ->whereYear('tanggal_penilaian', $tanggal->year)
                 ->exists();
 
-            if ($existing) {
+            if ($sudahAda) {
                 continue;
             }
 
-            $hasInserted = false;
-            foreach ($kriterias as $kriteria) {
-                $cellValue = $this->getCellValue($headers, $row, [$kriteria->nama_kriteria, $kriteria->kode_kriteria]);
-                if ($cellValue === '') {
+            // Cek apakah semua kriteria terisi
+            $allFilled = true;
+            foreach ($kriteriaValues as $kategoriId) {
+                if (empty($kategoriId)) {
+                    $allFilled = false;
+                    break;
+                }
+            }
+
+            if (!$allFilled) {
+                continue; // Skip balita yang belum lengkap kriterianya
+            }
+
+            foreach ($kriteriaValues as $kriteriaId => $kategoriId) {
+                if (empty($kategoriId)) {
                     continue;
                 }
 
-                $kategori = KategoriPenilaian::where('kriteria_id', $kriteria->id)
-                    ->whereRaw('LOWER(TRIM(nama_kategori)) = ?', [mb_strtolower(trim($cellValue))])
-                    ->first();
+                $kriteria = Kriteria::find($kriteriaId);
+                $kategori = KategoriPenilaian::find($kategoriId);
 
-                if (!$kategori) {
+                if (!$kriteria || !$kategori) {
                     continue;
                 }
 
                 PenilaianBalita::create([
-                    'balita_id' => $balita->id,
-                    'kriteria_id' => $kriteria->id,
-                    'kategori_penilaian_id' => $kategori->id,
-                    'tanggal_penilaian' => $tanggal->format('Y-m-d'),
+                    'balita_id' => $balitaId,
+                    'kriteria_id' => $kriteriaId,
+                    'kategori_penilaian_id' => $kategoriId,
+                    'tanggal_penilaian' => $tanggalPenilaian,
                     'bobot_snapshot' => $kriteria->bobot,
                     'nilai_kategori_snapshot' => $kategori->nilai,
                 ]);
-
-                $hasInserted = true;
             }
 
-            if ($hasInserted) {
-                $imported++;
-                if ($firstImportedDate === null) {
-                    $firstImportedDate = $tanggal; // <-- tambahkan ini
-                }
-            }
+            $imported++;
         }
 
-        return redirect()->route('penilaian_balita.index', $firstImportedDate ? [
-            'bulan' => $firstImportedDate->month,
-            'tahun' => $firstImportedDate->year,
-        ] : [])->with('success', "Berhasil mengimpor $imported data penilaian");
+        if ($imported === 0) {
+            return back()->with('error', 'Tidak ada data yang berhasil disimpan. Pastikan semua kriteria terisi.');
+        }
+
+        return redirect()->route('penilaian_balita.index', [
+            'bulan' => $tanggal->month,
+            'tahun' => $tanggal->year,
+        ])->with('success', "Berhasil menyimpan penilaian untuk $imported balita");
     }
 
     // =========================

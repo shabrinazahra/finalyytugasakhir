@@ -71,11 +71,11 @@ Route::prefix('kader')->middleware(['auth'])->group(function () {
     Route::post('/penilaian-balita', [PenilaianBalitaController::class, 'store'])
         ->name('penilaian_balita.store');
 
-    Route::post('/penilaian-balita/import', [PenilaianBalitaController::class, 'import'])
-        ->name('penilaian_balita.import');
+    Route::get('/penilaian-balita/input-massal', [PenilaianBalitaController::class, 'createMassal'])
+        ->name('penilaian_balita.create_massal');
 
-    Route::get('/penilaian-balita/template', [TemplateExcelController::class, 'penilaianTemplate'])
-        ->name('penilaian_balita.template');
+    Route::post('/penilaian-balita/input-massal', [PenilaianBalitaController::class, 'storeMassal'])
+        ->name('penilaian_balita.store_massal');
 
     Route::get('/penilaian-balita/{id}/edit', [PenilaianBalitaController::class, 'edit'])
         ->name('penilaian_balita.edit');
