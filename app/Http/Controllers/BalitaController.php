@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Balita;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 
 class BalitaController extends Controller
 {
@@ -33,6 +35,97 @@ class BalitaController extends Controller
     public function create() //menampilkan form tambah  balita 
     {
         return view('kader.balita.create');
+    }
+
+    public function show($id)
+    {
+        return redirect()->route('balita.index');
+    }
+
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv',
+        ], [
+            'file.required' => 'File Excel wajib diunggah.',
+            'file.file' => 'File yang diunggah tidak valid.',
+            'file.mimes' => 'Format file harus Excel atau CSV.',
+        ]);
+
+        $user = Auth::user();
+
+        if (!$user->posyandu_id) {
+            return back()->with('error', 'User belum memiliki posyandu');
+        }
+
+        $file = $request->file('file');
+        $reader = IOFactory::createReaderForFile($file->getRealPath());
+        $spreadsheet = $reader->load($file->getRealPath());
+        $sheet = $spreadsheet->getActiveSheet();
+        $rows = $sheet->toArray();
+
+        if (count($rows) < 2) {
+            return back()->with('error', 'File Excel tidak memiliki data baris yang cukup.');
+        }
+
+        $header = array_map(fn($value) => strtolower(trim((string) $value)), $rows[0]);
+        $expected = ['nama', 'nik', 'jenis kelamin', 'tanggal lahir', 'nama orang tua'];
+
+        foreach ($expected as $field) {
+            if (!in_array($field, $header, true)) {
+                return back()->with('error', 'Format file tidak sesuai. Pastikan kolom: Nama, NIK, Jenis Kelamin, Tanggal Lahir, Nama Orang Tua.');
+            }
+        }
+
+        $imported = 0;
+        foreach (array_slice($rows, 1) as $row) {
+            $data = array_combine($header, $row);
+            if (!$data) {
+                continue;
+            }
+
+            $nama = trim((string) ($data['nama'] ?? ''));
+            $nik = trim((string) ($data['nik'] ?? ''));
+            $jenisKelamin = trim((string) ($data['jenis kelamin'] ?? ''));
+            $tanggalLahir = trim((string) ($data['tanggal lahir'] ?? ''));
+            $namaOrtu = trim((string) ($data['nama orang tua'] ?? ''));
+
+            if ($nama === '' || $nik === '' || $jenisKelamin === '' || $tanggalLahir === '' || $namaOrtu === '') {
+                continue;
+            }
+
+            $formattedDate = null;
+            if (is_numeric($tanggalLahir)) {
+                $formattedDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((int) $tanggalLahir)->format('Y-m-d');
+            } else {
+                try {
+                    $formattedDate = \Carbon\Carbon::createFromFormat('d/m/Y', $tanggalLahir)->format('Y-m-d');
+                } catch (\Exception $e) {
+                    try {
+                        $formattedDate = \Carbon\Carbon::createFromFormat('Y-m-d', $tanggalLahir)->format('Y-m-d');
+                    } catch (\Exception $e2) {
+                        try {
+                            $formattedDate = \Carbon\Carbon::createFromFormat('d-m-Y', $tanggalLahir)->format('Y-m-d');
+                        } catch (\Exception $e3) {
+                            $formattedDate = \Carbon\Carbon::parse($tanggalLahir)->format('Y-m-d');
+                        }
+                    }
+                }
+            }
+
+            Balita::create([
+                'nama' => $nama,
+                'nik' => $nik,
+                'jenis_kelamin' => $jenisKelamin,
+                'tanggal_lahir' => $formattedDate,
+                'nama_ortu' => $namaOrtu,
+                'posyandu_id' => $user->posyandu_id,
+            ]);
+
+            $imported++;
+        }
+
+        return redirect()->route('balita.index')->with('success', "Berhasil mengimpor $imported data balita");
     }
 
     public function store(Request $request) //menyimpan data baliita baru 
@@ -68,13 +161,13 @@ class BalitaController extends Controller
             'jenis_kelamin' => $request->jenis_kelamin,
             'tanggal_lahir' => $request->tanggal_lahir,
             'nama_ortu' => $request->nama_ortu,
-            'posyandu_id' => $user->posyandu_id, 
+            'posyandu_id' => $user->posyandu_id,
         ]);
 
         return redirect()->route('balita.index')->with('success', 'Data balita berhasil ditambahkan');
     }
 
-    public function edit($id)//menampilkan from edit balita
+    public function edit($id) //menampilkan from edit balita
     {
         $user = Auth::user();
 
@@ -87,7 +180,7 @@ class BalitaController extends Controller
     }
 
     public function update(Request $request, $id) //memperbarui data balita 
-    { 
+    {
         $request->validate([
             'nama' => 'required|string|max:255',
             'nik' => 'required|string|max:20',

@@ -7,14 +7,31 @@
             <h1 class="text-2xl font-semibold text-gray-800">Data Balita</h1>
         </div>
 
-        {{-- TAMBAH --}}
-        <div class="mb-4">
+        {{-- ACTIONS --}}
+        <div class="mb-4 flex flex-wrap gap-2">
             <a href="{{ route('balita.create') }}"
                 class="inline-flex items-center gap-2 bg-[#1B3C53] text-white px-4 py-2 rounded-lg text-sm font-medium
                hover:bg-[#234C6A] transition shadow-sm">
                 <x-lucide-plus class="w-4 h-4" />
                 Tambah Balita
             </a>
+
+            <a href="{{ route('balita.template') }}" class="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition shadow-sm">
+                <x-lucide-download class="w-4 h-4" />
+                Template Excel
+            </a>
+
+            <form action="{{ route('balita.import') }}" method="POST" enctype="multipart/form-data" class="inline-flex items-center gap-2">
+                @csrf
+                <label class="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition shadow-sm cursor-pointer">
+                    <x-lucide-file-up class="w-4 h-4" />
+                    Import Excel
+                    <input type="file" name="file" accept=".xlsx,.xls,.csv" class="hidden" required>
+                </label>
+                <button type="submit" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 transition shadow-sm">
+                    Unggah
+                </button>
+            </form>
         </div>
 
         {{-- SEARCH --}}
@@ -34,6 +51,12 @@
                 </button>
             </div>
         </form>
+
+        @if ($balitas->isEmpty())
+        <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            Belum ada data balita yang diupload. Silakan tambahkan data secara manual atau impor melalui Excel.
+        </div>
+        @endif
 
         {{-- TABLE --}}
         <div class="bg-white rounded-2xl shadow-sm border overflow-hidden">

@@ -10,6 +10,7 @@ use App\Models\PenilaianBalita;
 use App\Models\KategoriPenilaian;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class PenilaianBalitaController extends Controller
 {
@@ -96,6 +97,166 @@ class PenilaianBalitaController extends Controller
         return view('kader.penilaian_balita.create', compact('kriterias'));
     }
 
+    private function normalizeHeader(string $value): string
+    {
+        return preg_replace('/[^a-z0-9]+/', '', mb_strtolower(trim($value)));
+    }
+
+    private function findHeaderIndex(array $headers, array $candidates): ?int
+    {
+        $normalizedCandidates = array_map(fn($value) => $this->normalizeHeader($value), $candidates);
+
+        foreach ($headers as $index => $header) {
+            if (in_array($this->normalizeHeader($header), $normalizedCandidates, true)) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
+    private function getCellValue(array $headers, array $row, array $candidates): string
+    {
+        $index = $this->findHeaderIndex($headers, $candidates);
+
+        if ($index === null) {
+            return '';
+        }
+
+        return trim((string) ($row[$index] ?? ''));
+    }
+
+    private function findBalitaByName(string $namaBalita, int $posyanduId): ?Balita
+    {
+        $normalizedTarget = $this->normalizeHeader($namaBalita);
+
+        $balitas = Balita::where('posyandu_id', $posyanduId)->get();
+
+        foreach ($balitas as $balita) {
+            if ($this->normalizeHeader($balita->nama) === $normalizedTarget) {
+                return $balita;
+            }
+        }
+
+        return null;
+    }
+
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv',
+        ], [
+            'file.required' => 'File Excel wajib diunggah.',
+            'file.file' => 'File yang diunggah tidak valid.',
+            'file.mimes' => 'Format file harus Excel atau CSV.',
+        ]);
+
+        $user = Auth::user();
+        if (!$user->posyandu_id) {
+            return back()->with('error', 'User belum memiliki posyandu');
+        }
+
+        $file = $request->file('file');
+        $reader = IOFactory::createReaderForFile($file->getRealPath());
+        $spreadsheet = $reader->load($file->getRealPath());
+        $sheet = $spreadsheet->getActiveSheet();
+        $rows = $sheet->toArray();
+
+        if (count($rows) < 2) {
+            return back()->with('error', 'File Excel tidak memiliki data baris yang cukup.');
+        }
+
+        $headers = array_values(array_map(fn($value) => trim((string) $value), $rows[0]));
+
+        $namaIndex = $this->findHeaderIndex($headers, ['Nama Balita', 'Nama', 'Balita', 'Nama Anak']);
+        $tanggalIndex = $this->findHeaderIndex($headers, ['Tanggal Penilaian', 'Tanggal', 'Tgl Penilaian', 'Tgl']);
+
+        if ($namaIndex === null || $tanggalIndex === null) {
+            return back()->with('error', 'Format file tidak sesuai. Pastikan ada kolom Nama Balita dan Tanggal Penilaian.');
+        }
+
+        $kriterias = Kriteria::orderByRaw('CAST(SUBSTRING(kode_kriteria, 2) AS UNSIGNED)')->get();
+        $imported = 0;
+        $firstImportedDate = null;
+
+        foreach (array_slice($rows, 1) as $row) {
+            $namaBalita = trim((string) ($row[$namaIndex] ?? ''));
+            $tanggalPenilaian = trim((string) ($row[$tanggalIndex] ?? ''));
+
+            if ($namaBalita === '' || $tanggalPenilaian === '') {
+                continue;
+            }
+
+            $balita = $this->findBalitaByName($namaBalita, $user->posyandu_id);
+            if (!$balita) {
+                continue;
+            }
+
+            $tanggal = null;
+            try {
+                $tanggal = Carbon::createFromFormat('d/m/Y', $tanggalPenilaian);
+            } catch (\Exception $e) {
+                try {
+                    $tanggal = Carbon::createFromFormat('Y-m-d', $tanggalPenilaian);
+                } catch (\Exception $e2) {
+                    try {
+                        $tanggal = Carbon::createFromFormat('d-m-Y', $tanggalPenilaian);
+                    } catch (\Exception $e3) {
+                        $tanggal = Carbon::parse($tanggalPenilaian);
+                    }
+                }
+            }
+
+            $existing = PenilaianBalita::where('balita_id', $balita->id)
+                ->whereMonth('tanggal_penilaian', $tanggal->month)
+                ->whereYear('tanggal_penilaian', $tanggal->year)
+                ->exists();
+
+            if ($existing) {
+                continue;
+            }
+
+            $hasInserted = false;
+            foreach ($kriterias as $kriteria) {
+                $cellValue = $this->getCellValue($headers, $row, [$kriteria->nama_kriteria, $kriteria->kode_kriteria]);
+                if ($cellValue === '') {
+                    continue;
+                }
+
+                $kategori = KategoriPenilaian::where('kriteria_id', $kriteria->id)
+                    ->whereRaw('LOWER(TRIM(nama_kategori)) = ?', [mb_strtolower(trim($cellValue))])
+                    ->first();
+
+                if (!$kategori) {
+                    continue;
+                }
+
+                PenilaianBalita::create([
+                    'balita_id' => $balita->id,
+                    'kriteria_id' => $kriteria->id,
+                    'kategori_penilaian_id' => $kategori->id,
+                    'tanggal_penilaian' => $tanggal->format('Y-m-d'),
+                    'bobot_snapshot' => $kriteria->bobot,
+                    'nilai_kategori_snapshot' => $kategori->nilai,
+                ]);
+
+                $hasInserted = true;
+            }
+
+            if ($hasInserted) {
+                $imported++;
+                if ($firstImportedDate === null) {
+                    $firstImportedDate = $tanggal; // <-- tambahkan ini
+                }
+            }
+        }
+
+        return redirect()->route('penilaian_balita.index', $firstImportedDate ? [
+            'bulan' => $firstImportedDate->month,
+            'tahun' => $firstImportedDate->year,
+        ] : [])->with('success', "Berhasil mengimpor $imported data penilaian");
+    }
+
     // =========================
     // BALITA TERSEDIA
     // =========================
@@ -130,15 +291,17 @@ class PenilaianBalitaController extends Controller
     // =========================
     public function store(Request $request) //menyimpan penilaian balita baru
     {
+        $tanggalPenilaian = $request->input('tanggal_penilaian', now()->toDateString());
+        $request->merge(['tanggal_penilaian' => $tanggalPenilaian]);
+
         // Validasi input dengan pesan error dalam Bahasa Indonesia
         $request->validate([
             'balita_id' => 'required',
-            'tanggal_penilaian' => 'required|date',
+            'tanggal_penilaian' => 'nullable|date',
             'penilaian' => 'required|array',
             'penilaian.*' => 'required'
         ], [
             'balita_id.required' => 'Balita wajib dipilih.',
-            'tanggal_penilaian.required' => 'Tanggal penilaian wajib diisi.',
             'tanggal_penilaian.date' => 'Format tanggal penilaian tidak valid.',
             'penilaian.required' => 'Semua kriteria wajib dinilai/diisi.',
             'penilaian.array' => 'Data penilaian harus berupa kriteria.',
@@ -146,7 +309,7 @@ class PenilaianBalitaController extends Controller
         ]);
 
         // Cek apakah balita sudah dinilai pada bulan & tahun yang sama (cegah duplikasi)
-        $tanggal = Carbon::parse($request->tanggal_penilaian);
+        $tanggal = Carbon::parse($tanggalPenilaian);
         $sudahAda = PenilaianBalita::where('balita_id', $request->balita_id)
             ->whereMonth('tanggal_penilaian', $tanggal->month)
             ->whereYear('tanggal_penilaian', $tanggal->year)
@@ -168,7 +331,7 @@ class PenilaianBalitaController extends Controller
                 'balita_id' => $request->balita_id,
                 'kriteria_id' => $kriteria_id,
                 'kategori_penilaian_id' => $kategori_id,
-                'tanggal_penilaian' => $request->tanggal_penilaian,
+                'tanggal_penilaian' => $tanggalPenilaian,
                 // Simpan snapshot bobot & nilai saat ini agar tidak berubah
                 // meskipun bobot/nilai diubah di kemudian hari
                 'bobot_snapshot' => $kriteria ? $kriteria->bobot : null,
@@ -214,15 +377,17 @@ class PenilaianBalitaController extends Controller
     // =========================
     public function update(Request $request, int $id) //memperbarui penilaian balita yang sudah ada
     {
+        $tanggalPenilaian = $request->input('tanggal_penilaian', now()->toDateString());
+        $request->merge(['tanggal_penilaian' => $tanggalPenilaian]);
+
         // Validasi input dengan pesan error dalam Bahasa Indonesia
         $request->validate([
             'balita_id'         => 'required',
-            'tanggal_penilaian' => 'required|date',
+            'tanggal_penilaian' => 'nullable|date',
             'penilaian'         => 'required|array',
             'penilaian.*'       => 'required'
         ], [
             'balita_id.required'         => 'Balita wajib dipilih.',
-            'tanggal_penilaian.required' => 'Tanggal penilaian wajib diisi.',
             'tanggal_penilaian.date'     => 'Format tanggal penilaian tidak valid.',
             'penilaian.required'         => 'Semua kriteria wajib dinilai/diisi.',
             'penilaian.array'            => 'Data penilaian harus berupa kriteria.',
@@ -240,7 +405,7 @@ class PenilaianBalitaController extends Controller
                 ['balita_id' => $request->balita_id, 'kriteria_id' => $kriteria_id],
                 [
                     'kategori_penilaian_id'   => $kategori_id,
-                    'tanggal_penilaian'       => $request->tanggal_penilaian,
+                    'tanggal_penilaian'       => $tanggalPenilaian,
                     // Perbarui snapshot bobot & nilai ke nilai terkini
                     'bobot_snapshot'          => $kriteria ? $kriteria->bobot : null,
                     'nilai_kategori_snapshot' => $kategori ? $kategori->nilai : null,

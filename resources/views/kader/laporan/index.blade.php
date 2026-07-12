@@ -36,7 +36,20 @@
         {{-- FILTER CARD (NO-PRINT) --}}
         <div class="bg-white border rounded-2xl p-4 shadow-sm mb-6 no-print">
             <form action="{{ route('kader.laporan.index') }}" method="GET"
-                class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+
+                {{-- TAHUN --}}
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pilih Tahun</label>
+                    <select name="tahun" onchange="this.form.submit()"
+                        class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#1B3C53] focus:border-[#1B3C53] outline-none bg-gray-50 transition">
+                        @foreach ($years as $year)
+                            <option value="{{ $year }}" {{ (string) $selectedYear === (string) $year ? 'selected' : '' }}>
+                                {{ $year }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
 
                 {{-- PERIODE --}}
                 <div class="space-y-1.5 md:col-span-2">

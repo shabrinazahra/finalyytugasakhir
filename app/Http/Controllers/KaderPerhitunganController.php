@@ -8,6 +8,7 @@ use App\Models\Kriteria;
 use App\Models\PenilaianBalita;
 use App\Services\MooraCalculationService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class KaderPerhitunganController extends Controller
@@ -25,7 +26,38 @@ class KaderPerhitunganController extends Controller
     // ==========================================
     // dropdown periode daftar penilaian balita 
     // ==========================================
-    private function getPeriodes($posyanduId) //mengambil periode daftar penilaian balita sesuai posyandu 
+    private function getYears($posyanduId)
+    {
+        $balitaIds = Balita::where('posyandu_id', $posyanduId)->pluck('id');
+
+        $minYear = PenilaianBalita::whereIn('balita_id', $balitaIds)
+            ->whereNotNull('tanggal_penilaian')
+            ->min(DB::raw('YEAR(tanggal_penilaian)'));
+
+        $maxYear = PenilaianBalita::whereIn('balita_id', $balitaIds)
+            ->whereNotNull('tanggal_penilaian')
+            ->max(DB::raw('YEAR(tanggal_penilaian)'));
+
+        $minYear = $minYear ? intval($minYear) : now()->year;
+        $maxYear = $maxYear ? intval($maxYear) : now()->year;
+
+        $minYear = min($minYear, now()->year);
+        $maxYear = max($maxYear, now()->year);
+
+        return range($maxYear, $minYear);
+    }
+
+    private function getSelectedYear(Request $request, $posyanduId)
+    {
+        if ($request->filled('tahun')) {
+            return $request->tahun;
+        }
+
+        $years = $this->getYears($posyanduId);
+        return $years ? (string) $years[0] : (string) now()->year;
+    }
+
+    private function getPeriodes($posyanduId, $year = null) //mengambil periode daftar penilaian balita sesuai posyandu 
     {
         $balitaIds = Balita::where('posyandu_id', $posyanduId)->pluck('id'); //ambil id balita sesuai posyandu 
         
@@ -42,10 +74,13 @@ class KaderPerhitunganController extends Controller
         $minYear = min($minYear, now()->year);
         $maxYear = max($maxYear, now()->year);
 
+        $startYear = $year ? intval($year) : $maxYear;
+        $endYear = $year ? intval($year) : $minYear;
+
         $periodes = [];
-        for ($year = $maxYear; $year >= $minYear; $year--) {
+        for ($currentYear = $startYear; $currentYear >= $endYear; $currentYear--) {
             for ($month = 12; $month >= 1; $month--) {
-                $carbon = Carbon::createFromDate($year, $month, 1);
+                $carbon = Carbon::createFromDate($currentYear, $month, 1);
                 $key = $carbon->format('Y-m');
                 $label = $this->getIndonesianMonth($month);
                 $periodes[$key] = $label;
@@ -55,16 +90,25 @@ class KaderPerhitunganController extends Controller
         return $periodes;
     }
 
-    private function getSelectedPeriode(Request $request, $posyanduId) //mengambil periode yang dipilih user 
+    private function getSelectedPeriode(Request $request, $posyanduId, $selectedYear = null) //mengambil periode yang dipilih user 
     {
         if ($request->filled('periode')) {
-            return $request->periode;
+            $requestedPeriode = $request->periode;
+
+            if (!$selectedYear || Carbon::createFromFormat('Y-m', $requestedPeriode)->year == intval($selectedYear)) {
+                return $requestedPeriode;
+            }
         }
 
         $balitaIds = Balita::where('posyandu_id', $posyanduId)->pluck('id');
-        $latestDate = PenilaianBalita::whereIn('balita_id', $balitaIds)
-            ->whereNotNull('tanggal_penilaian')
-            ->max('tanggal_penilaian');
+        $query = PenilaianBalita::whereIn('balita_id', $balitaIds)
+            ->whereNotNull('tanggal_penilaian');
+
+        if ($selectedYear) {
+            $query->whereYear('tanggal_penilaian', $selectedYear);
+        }
+
+        $latestDate = $query->max('tanggal_penilaian');
 
         if ($latestDate) {
             return Carbon::parse($latestDate)->format('Y-m');
@@ -118,8 +162,10 @@ class KaderPerhitunganController extends Controller
     public function laporan(Request $request)//menampilkan laporan lengkap 
     {
         $user = Auth::user();
-        $periodes = $this->getPeriodes($user->posyandu_id); 
-        $selectedPeriode = $this->getSelectedPeriode($request, $user->posyandu_id); 
+        $selectedYear = $this->getSelectedYear($request, $user->posyandu_id);
+        $years = $this->getYears($user->posyandu_id);
+        $periodes = $this->getPeriodes($user->posyandu_id, $selectedYear); 
+        $selectedPeriode = $this->getSelectedPeriode($request, $user->posyandu_id, $selectedYear); 
 
         $service = new MooraCalculationService(); //menghitung moora sesuai periode  dan posyandu user 
         $mooraData = $service->calculateMoora($selectedPeriode, $user->posyandu_id);
@@ -128,6 +174,8 @@ class KaderPerhitunganController extends Controller
             'results' => $mooraData['results'],
             'periodes' => $periodes,
             'selectedPeriode' => $selectedPeriode,
+            'years' => $years,
+            'selectedYear' => $selectedYear,
             'kriterias' => $mooraData['kriterias'],
             'isComplete' => $mooraData['isComplete'],
             'incompleteBalitas' => $mooraData['incompleteBalitas']

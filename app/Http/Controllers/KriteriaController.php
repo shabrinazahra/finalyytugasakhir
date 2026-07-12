@@ -83,7 +83,7 @@ class KriteriaController extends Controller
             ->with('success', 'Data kriteria berhasil dihapus');
     }
 
-    private function generateKode(): string //menghasialkan kode kriteria baru secara otomatis 
+    private function generateKode(): string //menghasil kan kode kriteria baru secara otomatis 
     {
         // Ambil semua nomor dari kode yang ada, misal K1→1, K3→3 
         $used = Kriteria::pluck('kode_kriteria')

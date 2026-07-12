@@ -12,6 +12,7 @@ use App\Http\Controllers\PenilaianBalitaController;
 use App\Http\Controllers\PerhitunganAHPController;
 use App\Http\Controllers\LaporanController;
 use App\Http\Controllers\KaderPerhitunganController;
+use App\Http\Controllers\TemplateExcelController;
 
 // ==================
 // MENAMPILKAN HALAMAN AWAL
@@ -45,7 +46,15 @@ Route::prefix('kader')->middleware(['auth'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('kader.dashboard');
 
-    Route::resource('balita', BalitaController::class);
+    Route::get('/balita/template', [TemplateExcelController::class, 'balitaTemplate'])->name('balita.template');
+    Route::post('/balita/import', [BalitaController::class, 'import'])->name('balita.import');
+    Route::get('/balita', [BalitaController::class, 'index'])->name('balita.index');
+    Route::get('/balita/create', [BalitaController::class, 'create'])->name('balita.create');
+    Route::post('/balita', [BalitaController::class, 'store'])->name('balita.store');
+    Route::get('/balita/{id}/edit', [BalitaController::class, 'edit'])->name('balita.edit');
+    Route::put('/balita/{id}', [BalitaController::class, 'update'])->name('balita.update');
+    Route::delete('/balita/{id}', [BalitaController::class, 'destroy'])->name('balita.destroy');
+    Route::get('/balita/{id}', [BalitaController::class, 'show'])->name('balita.show');
 
     // ======================
     // PENILAIAN BALITA
@@ -61,6 +70,12 @@ Route::prefix('kader')->middleware(['auth'])->group(function () {
 
     Route::post('/penilaian-balita', [PenilaianBalitaController::class, 'store'])
         ->name('penilaian_balita.store');
+
+    Route::post('/penilaian-balita/import', [PenilaianBalitaController::class, 'import'])
+        ->name('penilaian_balita.import');
+
+    Route::get('/penilaian-balita/template', [TemplateExcelController::class, 'penilaianTemplate'])
+        ->name('penilaian_balita.template');
 
     Route::get('/penilaian-balita/{id}/edit', [PenilaianBalitaController::class, 'edit'])
         ->name('penilaian_balita.edit');
